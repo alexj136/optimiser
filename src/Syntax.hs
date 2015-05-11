@@ -36,7 +36,7 @@ newtype Assignment
 -- taking the jumps, until we reach the end.
 data LinearStatement
     = Label Name
-    | If Val Name
+    | If Val Name Name
     | Goto Name
     | Assign Assignment
     deriving (Eq, Ord)
@@ -58,8 +58,28 @@ data Adjacency
     -- Exit the block with an unconditional jump to a block with a given name
     = AdjGoto Name
     -- Exit the block with a conditional jump to a given name if val > 0, or a
-    -- different givne name otherwise
+    -- different given name otherwise
     | AdjIf Val Name Name
     deriving (Eq, Ord)
 
 type GraphProg  = M.Map Name Block
+
+linearToGraphCont :: LinearProg -> Int -> GraphProg -> GraphProg
+linearToGraphCont []            newName curGraphProg = curGraphProg
+linearToGraphCont (stmt : rest) newName curGraphProg = case stmt of
+    Label name ->
+        let (block, afterBlock) = parseBlock rest [] in
+        linearToGraphCont afterBlock newName (M.insert name block curGraphProg)
+    _ ->
+        let nextNewName = newName + 1
+            newNameStr = "__" ++ (show newName) ++ "__"
+        in
+        linearToGraphCont (Label newNameStr : stmt : rest) nextNewName curGraphProg
+
+parseBlock :: LinearProg -> [Assignment] -> (Block, LinearProg)
+parseBlock []            curBlock = (Block (curBlock, AdjGoto "__end__"), [])
+parseBlock (stmt : rest) curBlock = case stmt of
+    Label name          -> (Block (curBlock, AdjGoto name), stmt : rest)
+    If val tName fName  -> (Block (curBlock, AdjIf val tName fName), rest)
+    Goto name           -> (Block (curBlock, AdjGoto name), rest)
+    Assign asmt         -> parseBlock rest (curBlock ++ [asmt])
