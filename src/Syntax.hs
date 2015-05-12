@@ -1,5 +1,6 @@
 module Syntax where
 
+import Data.List (intersperse)
 import qualified Data.Map as M
 
 -- We represent names as strings.
@@ -27,8 +28,9 @@ data Val
 -- Assignments are the basic units of computation. They are three-address
 -- statements (not SSA though). They assign a literal to a name, which is
 -- computed from two other values via an operation.
-newtype Assignment
-    = Assignment (Name, Val, Op, Val)
+data Assignment
+    = FromOne Name Val
+    | FromTwo Name Val Op Val
     deriving (Eq, Ord)
 
 -- We can think of a program as a list of assignments, labels, jumps and
@@ -64,17 +66,24 @@ data Adjacency
 
 type GraphProg  = M.Map Name Block
 
-linearToGraphCont :: LinearProg -> Int -> GraphProg -> GraphProg
-linearToGraphCont []            newName curGraphProg = curGraphProg
-linearToGraphCont (stmt : rest) newName curGraphProg = case stmt of
-    Label name ->
+{-------------------------------------------------------------------------------
+                            LINEAR TO GRAPH CONVERSION
+-------------------------------------------------------------------------------}
+
+linearToGraph :: LinearProg -> GraphProg
+linearToGraph = linearToGraphCont 0 M.empty
+
+linearToGraphCont :: Int -> GraphProg -> LinearProg -> GraphProg
+linearToGraphCont newName curGraphProg curLinearProg = case curLinearProg of
+    []                  -> curGraphProg
+    (Label name : rest) ->
         let (block, afterBlock) = parseBlock rest [] in
-        linearToGraphCont afterBlock newName (M.insert name block curGraphProg)
-    _ ->
+        linearToGraphCont newName (M.insert name block curGraphProg) afterBlock
+    (stmt : rest)       ->
         let nextNewName = newName + 1
             newNameStr = "__" ++ (show newName) ++ "__"
         in
-        linearToGraphCont (Label newNameStr : stmt : rest) nextNewName curGraphProg
+        linearToGraphCont nextNewName curGraphProg (Label newNameStr : stmt : rest)
 
 parseBlock :: LinearProg -> [Assignment] -> (Block, LinearProg)
 parseBlock []            curBlock = (Block (curBlock, AdjGoto "__end__"), [])
@@ -83,3 +92,28 @@ parseBlock (stmt : rest) curBlock = case stmt of
     If val tName fName  -> (Block (curBlock, AdjIf val tName fName), rest)
     Goto name           -> (Block (curBlock, AdjGoto name), rest)
     Assign asmt         -> parseBlock rest (curBlock ++ [asmt])
+
+{-------------------------------------------------------------------------------
+                                PRETTY PRINTING
+-------------------------------------------------------------------------------}
+
+instance Show Op where
+    show op = case op of { Add -> "+" ; Sub -> "-" ; Mul -> "*" }
+
+instance Show Val where
+    show val = case val of { Var name -> name ; Lit int -> show int }
+
+instance Show Assignment where
+    show (FromOne name val)      = name ++ ' ' : show val
+    show (FromTwo name v1 op v2) =
+        concat $ intersperse " " $ [name, show v1, show op, show v2]
+
+instance Show LinearStatement where
+    show (Label name)   = name ++ ":"
+    show (If val n1 n2) =
+        concat $ intersperse " " $ ["if", show val, "goto", n1, "else", n2]
+    show (Goto name)    = "goto " ++ name
+    show (Assign asmt)  = show asmt
+
+ppLinearProg :: LinearProg -> String
+ppLinearProg = concat . intersperse "\n" . map show
