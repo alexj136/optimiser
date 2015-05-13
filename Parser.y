@@ -12,51 +12,51 @@ import Syntax
 %error     { parseError }
 
 %token
-    newline { ( TK_Newline    , p ) }
-    add     { ( TK_Add        , p ) }
-    sub     { ( TK_Sub        , p ) }
-    mul     { ( TK_Mul        , p ) }
-    colon   { ( TK_Colon      , p ) }
-    assign  { ( TK_Assign     , p ) }
-    if      { ( TK_If         , p ) }
-    goto    { ( TK_Goto       , p ) }
-    else    { ( TK_Else       , p ) }
-    greater { ( TK_Greater    , p ) }
-    zero    { ( TK_Zero       , p ) }
-    int     { ( TK_Int     $$ , p ) }
-    name    { ( TK_Name    $$ , p ) }
+    newline { ( TK_Newline    , _ ) }
+    add     { ( TK_Add        , _ ) }
+    sub     { ( TK_Sub        , _ ) }
+    mul     { ( TK_Mul        , _ ) }
+    colon   { ( TK_Colon      , _ ) }
+    assign  { ( TK_Assign     , _ ) }
+    if      { ( TK_If         , _ ) }
+    goto    { ( TK_Goto       , _ ) }
+    else    { ( TK_Else       , _ ) }
+    greater { ( TK_Greater    , _ ) }
+    zero    { ( TK_Zero       , _ ) }
+    int     { ( TK_Int     $$ , _ ) }
+    name    { ( TK_Name    $$ , _ ) }
 %%
 
 PROG :: { [LinearStatement] }
 
 PROG
-    : STMT newline PROG                      { $1 : $3                       }
-    | newline PROG                           { $2                            }
-    | STMT                                   { [$1]                          }
-    | {- empty -}                            { []                            }
+    : STMT newline PROG                       { $1 : $3                      }
+    | newline PROG                            { $2                           }
+    | STMT                                    { [$1]                         }
+    | {- empty -}                             { []                           }
 
 STMT :: { LinearStatement   }
 STMT
-    : name colon                             { Label $1                      }
-    | if name greater zero goto VAL else VAL { If $2 $6 $8                   }
-    | goto name                              { Goto $2                       }
-    | name assign VAL                        { Assign (FromOne $1 $3)        }
-    | name assign VAL OP VAL                 { Assign (FromTwo $1 $3 $4 $5 ) }
+    : name colon                              { Label $1                     }
+    | if VAL greater zero goto name else name { If $2 $6 $8                  }
+    | goto name                               { Goto $2                      }
+    | name assign VAL                         { Assign (FromOne $1 $3)       }
+    | name assign VAL OP VAL                  { Assign (FromTwo $1 $3 $4 $5) }
 
 VAL  :: { Val               }
 VAL
-    : name                                   { Var $1                        }
-    | int                                    { Lit $1                        }
-    | zero                                   { Lit 0                         }
+    : name                                    { Var $1                       }
+    | int                                     { Lit $1                       }
+    | zero                                    { Lit 0                        }
 
 OP   :: { Op                }
 OP
-    : add                                    { Add                           }
-    | sub                                    { Sub                           }
-    | mul                                    { Mul                           }
+    : add                                     { Add                          }
+    | sub                                     { Sub                          }
+    | mul                                     { Mul                          }
 {
 parseError :: [Token] -> a
-parseError []     = error "Reached end of file while parsing"
-parseError (t:ts) = error ("Parse error on line " ++ show (getY t) ++
-                           ", column " ++ show (getX t) ++ ".")
+parseError []                = error "Reached end of file while parsing"
+parseError ((tk,(y,x)) : ts) = error $ concat ["Parse error on line ", show y,
+                               ", column ", show x,"."]
 }

@@ -5,13 +5,14 @@ module Lexer where
 %wrapper "posn"
 
 $digit = 0-9
+$wslin = [\ \t\f\v\r] -- linear whitespace - matches all whitespace but newlines
 $lower = a-z
 $upper = A-Z
 $alpha = [$lower $upper]
 $alnum = [$alpha $digit]
 
 tokens :-
-    $white+                ;
+    $wslin+                ;
     \n|\;.*\n              { \p s -> ( TK_Newline      , pos p ) }
     "+"                    { \p s -> ( TK_Add          , pos p ) }
     "-"                    { \p s -> ( TK_Sub          , pos p ) }
@@ -28,9 +29,10 @@ tokens :-
 
 {
 type Token = (TokenKind, TokenPos)
+type TokenPos = (Int, Int)
 
 data TokenKind
-    | TK_Newline
+    = TK_Newline
     | TK_Add
     | TK_Sub
     | TK_Mul
@@ -48,7 +50,7 @@ data TokenKind
 getX :: Token -> Int
 getX (_, (_, x)) = x
 getY :: Token -> Int
-getX (_, (y, _)) = y
+getY (_, (y, _)) = y
 
 -- The lexer function
 scan :: String -> [Token]

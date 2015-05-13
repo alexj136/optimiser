@@ -1,5 +1,6 @@
 *.swp
 *.o
 *.hi
-src/Lexer.hs
-src/Parser.hs
+main
+Lexer.hs
+Parser.hs

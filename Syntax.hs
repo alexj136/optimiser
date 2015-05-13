@@ -106,7 +106,7 @@ instance Show Val where
 instance Show Assignment where
     show (FromOne name val)      = name ++ ' ' : show val
     show (FromTwo name v1 op v2) =
-        concat $ intersperse " " $ [name, show v1, show op, show v2]
+        concat $ intersperse " " $ [name, ":=", show v1, show op, show v2]
 
 instance Show LinearStatement where
     show (Label name)   = name ++ ":"
