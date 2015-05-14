@@ -1,6 +1,2 @@
 *.swp
-*.o
-*.hi
-main
-Lexer.hs
-Parser.hs
+dist
