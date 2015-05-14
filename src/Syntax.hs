@@ -1,7 +1,7 @@
 module Syntax where
 
 import Data.List (intersperse)
-import qualified Data.Map as M
+import qualified Data.Map    as M
 
 -- We represent names as strings.
 type Name = String
@@ -53,6 +53,9 @@ assignments :: Block -> [Assignment]
 assignments (Block (assignmentList, _)) = assignmentList
 adjacency :: Block -> Adjacency
 adjacency (Block (_, adj)) = adj
+successors :: Block -> [Name]
+successors (Block (_, AdjGoto n))     = [n]
+successors (Block (_, AdjIf _ n1 n2)) = [n1, n2]
 
 -- An ajacency describes the mode of exit from a block and transition to another
 -- block, which can happen in two ways:
@@ -66,25 +69,40 @@ data Adjacency
 
 type GraphProg  = M.Map Name Block
 
+-- Obtain the names of all blocks that lead immediatley to the given block, by
+-- way of a direct or a conditional jump.
+predecessors ::
+    GraphProg   -> -- The containing program
+    Name        -> -- The name of the block for which we're interested in
+    [Name]
+predecessors prog blockName =
+    M.keys $ M.filter (\blk -> any (blockName ==) (successors blk)) prog
+
 {-------------------------------------------------------------------------------
                             LINEAR TO GRAPH CONVERSION
 -------------------------------------------------------------------------------}
 
+-- Convert a linear program to a graph program. Include __begin__ and __end__
+-- labels to aid the interpreter in execution.
 linearToGraph :: LinearProg -> GraphProg
 linearToGraph linProg = linearToGraphCont 0 M.empty
     ([Label "__begin__"] ++ linProg ++ [Label "__end__"])
-
-linearToGraphCont :: Int -> GraphProg -> LinearProg -> GraphProg
-linearToGraphCont newName curGraphProg curLinearProg = case curLinearProg of
-    []                  -> curGraphProg
-    (Label name : rest) ->
-        let (block, afterBlock) = parseBlock rest [] in
-        linearToGraphCont newName (M.insert name block curGraphProg) afterBlock
-    (stmt : rest)       ->
-        let nextNewName = newName + 1
-            newNameStr = "__" ++ (show newName) ++ "__"
-        in
-        linearToGraphCont nextNewName curGraphProg (Label newNameStr : stmt : rest)
+    where
+        linearToGraphCont :: Int -> GraphProg -> LinearProg -> GraphProg
+        linearToGraphCont newName curGraphProg curLinearProg =
+            case curLinearProg of
+                [] -> curGraphProg
+                (Label name : rest) ->
+                    let (block, afterBlock) = parseBlock rest []
+                    in
+                    linearToGraphCont newName (M.insert name block curGraphProg)
+                                                                    afterBlock
+                (stmt : rest) ->
+                    let nextNewName = newName + 1
+                        newNameStr = "__" ++ (show newName) ++ "__"
+                    in
+                    linearToGraphCont nextNewName curGraphProg
+                                                (Label newNameStr : stmt : rest)
 
 parseBlock :: LinearProg -> [Assignment] -> (Block, LinearProg)
 parseBlock []            curBlock = (Block (curBlock, AdjGoto "__end__"), [])
