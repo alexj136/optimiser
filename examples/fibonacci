@@ -1,0 +1,15 @@
+arg:
+    fibNo       := 10
+init:
+    pp          := 0
+    p           := 1
+    loopCount   := 1
+loop:
+    loopCount   := loopCount + 1
+    tmp         := pp
+    pp          := p
+    p           := tmp + pp
+    redo        := fibNo - loopCount
+    if redo > 0 goto loop else end
+end:
+    result      := p

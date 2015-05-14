@@ -59,33 +59,50 @@ interpret prog initialStore = interpret' prog "__begin__" initialStore
     where
         interpret' prog "__end__" store = Result store
         interpret' prog curBlockName store = do
-            store' <- doBlock prog curBlockName store
+            (nextLabel, newStore) <- doBlock prog curBlockName store
+            interpret' prog nextLabel newStore
     
 -- Step through a part of the program by executing all assignments in one basic
 -- block, and jumping to the next basic block.
 doBlock ::
-    GraphProg       ->                  -- The program we're executing
-    Name            ->                  -- The name of the block we're currently
-                                        -- executing
-    M.Map Name Int  ->                  -- The current variable store
-    InterpretResult (M.Map Name Int)    -- The resulting store
+    GraphProg       ->                      -- The program we're executing
+    Name            ->                      -- The name of the block we're
+                                            -- currently executing
+    M.Map Name Int  ->                      -- The current variable store
+    InterpretResult (Name, M.Map Name Int)  -- The resulting store and location
 doBlock prog curBlockName store = do
-    block <- (iLookup JumpToUndefinedLabel) curBlockName prog
-    doAssignments (assignments block) store
+    block           <- (iLookup JumpToUndefinedLabel) curBlockName prog
+    storeAfterBlock <- doAssignments store (assignments block)
+    nextLabel       <- followAdjacency prog (adjacency block) storeAfterBlock
+    return (nextLabel, storeAfterBlock)
 
--- Apply a list of assignments in sequence in a given store
-doAssignments ::
-    [Assignment]    ->                  -- The list of assignments
-    M.Map Name Int  ->                  -- The store
-    InterpretResult (M.Map Name Int)    -- The resulting store
-doAssignments assigns store = foldM doAssignment store assigns
+-- Given an program, an adjacency in that program, and the current store,
+-- determine the label name that we should follow the adjacency to.
+followAdjacency ::
+    GraphProg       ->      -- The program we're executing
+    Adjacency       ->      -- The adjacency we're to follow
+    M.Map Name Int  ->      -- The current variable store
+    InterpretResult Name    -- The label of the next block to execute
+followAdjacency prog adj store = case adj of
+    AdjGoto lbl         -> Result lbl
+    AdjIf val lbl1 lbl2 -> do
+        ev <- evalVal val store
+        return (if ev > 0 then lbl1 else lbl2)
 
--- Apply a single assignment in a given store
-doAssignment ::
-    M.Map Name Int  ->                  -- The store
-    Assignment      ->                  -- The assignment operation
-    InterpretResult (M.Map Name Int)    -- The resulting store
-doAssignment store (Assignment (name, v1, op, v2)) = do
+-- Apply a list of assignments in sequence in a given store. Takes the list of
+-- assignments and the initial store as arguments and returns the resulting
+-- store.
+doAssignments :: M.Map Name Int -> [Assignment] ->
+    InterpretResult (M.Map Name Int)
+doAssignments = foldM doAssignment
+
+-- Apply a single assignment in a given store. Takes the assignment operation
+-- and the initial store as arguments and returns the resulting store.
+doAssignment :: M.Map Name Int -> Assignment -> InterpretResult (M.Map Name Int)
+doAssignment store (FromOne name val) = do
+    ev <- evalVal val store
+    return (M.insert name ev store)
+doAssignment store (FromTwo name v1 op v2) = do
     ev1 <- evalVal v1 store
     ev2 <- evalVal v2 store
     return (M.insert name ((opToFunc op) ev1 ev2) store)

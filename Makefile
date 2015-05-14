@@ -1,4 +1,4 @@
-main: Lexer.hs Parser.hs Syntax.hs Main.hs
+main: Lexer.hs Parser.hs Syntax.hs Main.hs Interpreter.hs
 	ghc Main -o main
 
 Lexer.hs: Lexer.x

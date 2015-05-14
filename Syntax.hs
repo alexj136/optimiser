@@ -71,7 +71,8 @@ type GraphProg  = M.Map Name Block
 -------------------------------------------------------------------------------}
 
 linearToGraph :: LinearProg -> GraphProg
-linearToGraph = linearToGraphCont 0 M.empty
+linearToGraph linProg = linearToGraphCont 0 M.empty
+    ([Label "__begin__"] ++ linProg ++ [Label "__end__"])
 
 linearToGraphCont :: Int -> GraphProg -> LinearProg -> GraphProg
 linearToGraphCont newName curGraphProg curLinearProg = case curLinearProg of
