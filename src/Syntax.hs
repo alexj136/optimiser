@@ -1,7 +1,8 @@
 module Syntax where
 
 import Data.List (intersperse)
-import qualified Data.Map    as M
+import qualified Data.Map as M
+import qualified Data.Set as S
 
 -- We represent names as strings.
 type Name = String
@@ -32,6 +33,10 @@ data Assignment
     = FromOne Name Val
     | FromTwo Name Val Op Val
     deriving (Eq, Ord)
+
+assignee :: Assignment -> Name
+assignee (FromOne n _)     = n
+assignee (FromTwo n _ _ _) = n
 
 -- We can think of a program as a list of assignments, labels, jumps and
 -- conditional jumps. We move down the list, performing the assignments, and
@@ -78,9 +83,9 @@ predecessors ::
 predecessors prog blockName =
     M.keys $ M.filter (\blk -> any (blockName ==) (successors blk)) prog
 
--- Look up a GraphProg for the block with the given name
-gpBlockLookup :: Name -> GraphProg -> Maybe Block
-gpBlockLookup = M.lookup
+-- Enumerate the variable names (not label names) in a GraphProg
+varNameSet :: GraphProg -> S.Set Name
+varNameSet = S.fromList . (map assignee) . concat . (map assignments) . M.elems
 
 {-------------------------------------------------------------------------------
                             LINEAR TO GRAPH CONVERSION
