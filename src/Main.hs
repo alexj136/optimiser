@@ -1,11 +1,13 @@
 module Main where
 
-import qualified Data.Map as M
+import qualified Data.Map    as M
 import System.Environment (getArgs)
+import Util
 import Lexer
 import Parser
 import Syntax
-import Interpreter
+import qualified Interpreter as I
+import qualified Optimiser   as O
 
 main :: IO ()
 main = do
@@ -15,11 +17,11 @@ main = do
         let tokens = scan fileText
             linearAST = parse tokens
             graphAST  = linearToGraph linearAST
-            resultStr = case interpret graphAST M.empty of
-                Result map                     -> show map
-                EvaluationOfUndefinedName name ->
+            resultStr = case I.interpret graphAST M.empty of
+                I.Result map                     -> show map
+                I.EvaluationOfUndefinedName name ->
                     "Variable name '" ++ name ++ "' undefined"
-                JumpToUndefinedLabel      name ->
+                I.JumpToUndefinedLabel      name ->
                     "Label '" ++ name ++ "' undefined"
             in
             putStrLn resultStr

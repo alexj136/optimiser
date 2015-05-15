@@ -8,7 +8,6 @@ module Interpreter where
 import Syntax
 import Control.Monad
 import qualified Data.Map as M
-import qualified Data.Either as E
 
 -- There are three possible outcomes for the interpreter:
 data InterpretResult a
@@ -57,10 +56,10 @@ interpret ::
     InterpretResult (M.Map Name Int)    -- The final store
 interpret prog initialStore = interpret' prog "__begin__" initialStore
     where
-        interpret' prog "__end__" store = Result store
-        interpret' prog curBlockName store = do
-            (nextLabel, newStore) <- doBlock prog curBlockName store
-            interpret' prog nextLabel newStore
+    interpret' prog "__end__" store = Result store
+    interpret' prog curBlockName store = do
+        (nextLabel, newStore) <- doBlock prog curBlockName store
+        interpret' prog nextLabel newStore
     
 -- Step through a part of the program by executing all assignments in one basic
 -- block, and jumping to the next basic block.
