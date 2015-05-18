@@ -5,8 +5,6 @@ import qualified Data.Set as S
 import Util
 import Syntax
 
-type LabelledGraphProg = M.Map Name (Block, M.Map Name [ConstantPropInfo])
-
 -- For each variable, in the 'gap' between every assignment in the program, we
 -- define the ConstantPropInfo for that point and variable to be either:
 data ConstantPropInfo
@@ -18,67 +16,92 @@ data ConstantPropInfo
     | Unknowable    -- (Written with the 'top' symbol in literature)
     deriving (Eq, Ord)
 
+instance Show ConstantPropInfo where
+    show NotAssigned = "_|_"
+    show (Known x)   = show x
+    show Unknowable  = "^|^"
+
+-- Maps the names of variables in play to their corresponding ConstantPropInfo,
+-- for a particular point in the program.
+type InfoMap = M.Map Name ConstantPropInfo
+
+-- A LabelledBlock bundles and InfoMap with every assignment, which stores the
+-- ConstantPropInfo of the variables immediately before doing the assignment.
+-- It also carries an additional InfoMap to store the ConstantPropInfo after
+-- the last assignment.
+newtype LabelledBlock =
+    LabelledBlock ([(Assignment, InfoMap)], InfoMap, Adjacency)
+    deriving (Eq, Ord)
+
+-- Just like GraphProg is a map from block names to Blocks, a LabelledGraphProg
+-- is a map from block names to LabelledBlocks.
+type LabelledGraphProg = M.Map Name LabelledBlock
+
 data OptimiseResult a
     = Result a
     | BlockNotFound Name
     | VarNotFound Name
-
-data BeforeOrAfter = Before | After deriving (Show, Eq, Ord)
+    | IndexOutOfRange
 
 instance Functor OptimiseResult where
     fmap f (Result x) = Result (f x)
-    fmap f (VarNotFound   name) = VarNotFound   name
-    fmap f (BlockNotFound name) = BlockNotFound name
+    fmap _ (VarNotFound     blockName) = VarNotFound     blockName
+    fmap _ (BlockNotFound   blockName) = BlockNotFound   blockName
+    fmap _ IndexOutOfRange             = IndexOutOfRange
 
 instance Applicative OptimiseResult where
     pure = Result
     (<*>) (Result f) (Result x) = Result (f x)
-    (<*>) _ (VarNotFound   name) = VarNotFound   name
-    (<*>) _ (BlockNotFound name) = BlockNotFound name
+    (<*>) _ (VarNotFound     blockName) = VarNotFound     blockName
+    (<*>) _ (BlockNotFound   blockName) = BlockNotFound   blockName
+    (<*>) _ IndexOutOfRange             = IndexOutOfRange
 
 instance Monad OptimiseResult where
     return = Result
     (>>=) (Result x) f = f x
-    (>>=) (VarNotFound   name) _ = VarNotFound   name
-    (>>=) (BlockNotFound name) _ = BlockNotFound name
-
--- Look up the labellings for a given variable, for the stages in a given block
-labelLookup ::
-    Name                ->              -- The variable we're interested in
-    Name                ->              -- The block we're interested in
-    LabelledGraphProg   ->              -- The program to look up
-    OptimiseResult [ConstantPropInfo]   -- The corresponding info
-labelLookup varName blockName lprog = do
-    (_, conPropMap) <- lgpBlockLookup blockName lprog
-    case M.lookup varName conPropMap of
-        Nothing       -> VarNotFound varName
-        Just infoList -> Result infoList
+    (>>=) (VarNotFound     blockName) _ = VarNotFound     blockName
+    (>>=) (BlockNotFound   blockName) _ = BlockNotFound   blockName
+    (>>=) IndexOutOfRange             _ = IndexOutOfRange
 
 -- Look up a (Block, M.Map Name [ConstantPropInfo]) with given name in the given
 -- LabelledGraphProg.
 lgpBlockLookup ::
     Name                ->
     LabelledGraphProg   ->
-    OptimiseResult (Block, M.Map Name [ConstantPropInfo])
-lgpBlockLookup blockName lprog = case M.lookup blockName lprog of
-    Nothing        -> BlockNotFound blockName
-    Just blkAndCPI -> Result blkAndCPI
+    OptimiseResult LabelledBlock
+lgpBlockLookup lBlockName lProg = case M.lookup lBlockName lProg of
+    Nothing     -> BlockNotFound lBlockName
+    Just lBlock -> Result lBlock
+
+getAssignAt :: LabelledBlock -> Int -> OptimiseResult Assignment
+getAssignAt (LabelledBlock (asmtsWithInfo, _, _)) n
+    | (n >= 0) && (n < length asmtsWithInfo) = Result (fst (asmtsWithInfo !! n))
+    | otherwise                              = IndexOutOfRange
+
+getInfoAt :: LabelledBlock -> Int -> OptimiseResult InfoMap
+getInfoAt (LabelledBlock (asmtsWithInfo, endInfo, _)) n
+    | (n >= 0) && (n < length asmtsWithInfo) = Result (snd (asmtsWithInfo !! n))
+    | n == length asmtsWithInfo              = Result endInfo
+    | otherwise                              = IndexOutOfRange
 
 -- Generate constant propagation info for a given program.
 genConstantPropInfo :: GraphProg -> OptimiseResult LabelledGraphProg
-genConstantPropInfo prog = do
-    initiallyLabelledProg <- initialLabelling prog
-    updateConstantPropInfo initiallyLabelledProg
+genConstantPropInfo prog = updateConstantPropInfo (initialLabelling prog)
 
 -- Label a GraphProg with 'initial' ConstantPropInfo for every assignment and
 -- variable. Initially, we assume that no assignments are every reached and so
 -- the labelling for every point and variable is NotAssigned.
-initialLabelling :: GraphProg -> OptimiseResult LabelledGraphProg
+initialLabelling :: GraphProg -> LabelledGraphProg
 initialLabelling prog =
-    let allNames       = varNameSet prog
-        allNotAssigned = fmap (\blk -> (blk, M.empty)) prog in do
-        beginBlock    <- lgpBlockLookup "__begin__" allNotAssigned
-        notImplemented
+    let allNames       = varNameList prog
+        allNotAssigned = M.fromList $ map (\n -> (n, NotAssigned)) allNames
+    in
+    M.map (initialLabellingBlock allNotAssigned) prog
+    where
+    initialLabellingBlock :: InfoMap -> Block -> LabelledBlock
+    initialLabellingBlock allNotAssigned (Block (asmts, adj)) =
+        LabelledBlock (map (\a -> (a, allNotAssigned)) asmts,
+            allNotAssigned, adj)
 
 -- Update inconsistent constant propagation information in order to obtain
 -- correct information.
@@ -94,5 +117,4 @@ updateConstantPropInfo lprog = doUpdateConstantPropInfo lprog "__begin__"
         OptimiseResult LabelledGraphProg
     doUpdateConstantPropInfo lprog blockName = do
         block  <- lgpBlockLookup blockName lprog
-        labels <- labelLookup blockName notImplemented {- varName -} lprog
         notImplemented

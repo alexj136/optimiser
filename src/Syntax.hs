@@ -2,7 +2,6 @@ module Syntax where
 
 import Data.List (intersperse)
 import qualified Data.Map as M
-import qualified Data.Set as S
 
 -- We represent names as strings.
 type Name = String
@@ -61,6 +60,8 @@ adjacency (Block (_, adj)) = adj
 successors :: Block -> [Name]
 successors (Block (_, AdjGoto n))     = [n]
 successors (Block (_, AdjIf _ n1 n2)) = [n1, n2]
+numAssigns :: Block -> Int
+numAssigns = length . assignments
 
 -- An ajacency describes the mode of exit from a block and transition to another
 -- block, which can happen in two ways:
@@ -84,8 +85,8 @@ predecessors prog blockName =
     M.keys $ M.filter (\blk -> any (blockName ==) (successors blk)) prog
 
 -- Enumerate the variable names (not label names) in a GraphProg
-varNameSet :: GraphProg -> S.Set Name
-varNameSet = S.fromList . (map assignee) . concat . (map assignments) . M.elems
+varNameList :: GraphProg -> [Name]
+varNameList = (map assignee) . concat . (map assignments) . M.elems
 
 {-------------------------------------------------------------------------------
                             LINEAR TO GRAPH CONVERSION
