@@ -75,27 +75,38 @@ lgpBlockLookup lBlockName lProg = case M.lookup lBlockName lProg of
     Just lBlock -> Result lBlock
 
 getAssignAt :: LabelledBlock -> Int -> DataFlowResult Assignment
-getAssignAt (LabelledBlock (asmtsWithInfo, _, _)) n
-    | (n >= 0) && (n < length asmtsWithInfo) = Result (fst (asmtsWithInfo !! n))
-    | otherwise                              = IndexOutOfRange
+getAssignAt (LabelledBlock (asmtsWithInfo, _, _)) idx
+    | (idx >= 0) && (idx < length asmtsWithInfo) =
+        Result (fst (asmtsWithInfo !! idx))
+    | otherwise                                  = IndexOutOfRange
 
 getInfoMapAt :: LabelledBlock -> Int -> DataFlowResult InfoMap
-getInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, _)) n
-    | (n >= 0) && (n < length asmtsWithInfo) = Result (snd (asmtsWithInfo !! n))
-    | n == length asmtsWithInfo              = Result endInfo
-    | otherwise                              = IndexOutOfRange
+getInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx
+    | (idx >= 0) && (idx < length asmtsWithInfo) =
+        Result (snd (asmtsWithInfo !! idx))
+    | idx == length asmtsWithInfo                = Result endInfo
+    | otherwise                                  = IndexOutOfRange
 
 setInfoMapAt :: LabelledBlock -> Int -> InfoMap -> DataFlowResult LabelledBlock
-setInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, adj)) n newInfoMap
-    | (n >= 0) && (n < length asmtsWithInfo) =
-        let (asmtAtN, oldInfoMap) = asmtsWithInfo !! n
-            newAsmtsWithInfo      = toList $ Sq.update n (asmtAtN, newInfoMap) $
-                                                    Sq.fromList asmtsWithInfo
+setInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, adj)) idx newInfoMap
+    | (idx >= 0) && (idx < length asmtsWithInfo) =
+        let (asmtAtN, oldInfoMap) = asmtsWithInfo !! idx
+            newAsmtsWithInfo      = toList $
+                Sq.update idx (asmtAtN, newInfoMap) $ Sq.fromList asmtsWithInfo
         in
         Result (LabelledBlock (newAsmtsWithInfo, endInfo, adj))
-    | n == length asmtsWithInfo =
+    | idx == length asmtsWithInfo =
         Result (LabelledBlock (asmtsWithInfo, newInfoMap, adj))
-    | otherwise                 = IndexOutOfRange
+    | otherwise                   = IndexOutOfRange
+
+setInfoForNameAt :: LabelledBlock -> Int -> Name -> DataFlowInfo ->
+    DataFlowResult LabelledBlock
+setInfoForNameAt block idx name info =
+    case block of
+        (LabelledBlock (asmtsWithInfo, endInfo, adj)) -> do
+            prevInfoMapAt <- getInfoMapAt block idx
+            let newInfoMapAt = M.insert name info prevInfoMapAt in
+                setInfoMapAt block idx newInfoMapAt
 
 -- Generate data flow info for a given program.
 genDataFlowInfo :: GraphProg -> DataFlowResult LabelledGraphProg
