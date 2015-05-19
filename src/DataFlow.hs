@@ -74,6 +74,11 @@ lgpBlockLookup lBlockName lProg = case M.lookup lBlockName lProg of
     Nothing     -> BlockNotFound lBlockName
     Just lBlock -> Result lBlock
 
+infoMapLookup :: Name -> InfoMap -> DataFlowResult DataFlowInfo
+infoMapLookup name infoMap = case M.lookup name infoMap of
+    Just info -> Result info
+    Nothing   -> VarNotFound name
+
 getAssignAt :: LabelledBlock -> Int -> DataFlowResult Assignment
 getAssignAt (LabelledBlock (asmtsWithInfo, _, _)) idx
     | (idx >= 0) && (idx < length asmtsWithInfo) =
@@ -107,6 +112,17 @@ setInfoForNameAt block idx name info =
             prevInfoMapAt <- getInfoMapAt block idx
             let newInfoMapAt = M.insert name info prevInfoMapAt in
                 setInfoMapAt block idx newInfoMapAt
+
+getInfoForNameAt :: LabelledBlock -> Int -> Name -> DataFlowResult DataFlowInfo
+getInfoForNameAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx name
+    | (idx >= 0) && (idx < length asmtsWithInfo) =
+        let (asmtAtIdx, mapAtIdx) = asmtsWithInfo !! idx in do
+            info <- infoMapLookup name mapAtIdx
+            return info
+    | idx == length asmtsWithInfo                = do
+        info <- infoMapLookup name endInfo
+        return info
+    | otherwise                                  = IndexOutOfRange
 
 -- Generate data flow info for a given program.
 genDataFlowInfo :: GraphProg -> DataFlowResult LabelledGraphProg
