@@ -7,7 +7,7 @@ import Lexer
 import Parser
 import Syntax
 import qualified Interpreter as I
-import qualified Optimiser   as O
+import qualified DataFlow    as Df
 
 main :: IO ()
 main = do
