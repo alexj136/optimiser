@@ -1,8 +1,6 @@
 module DataFlow where
 
-import qualified Data.Map      as M
-import qualified Data.Sequence as Sq
-import Data.Foldable (toList)
+import qualified Data.Map as M
 import Util
 import Syntax
 
@@ -96,8 +94,8 @@ setInfoMapAt :: LabelledBlock -> Int -> InfoMap -> DataFlowResult LabelledBlock
 setInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, adj)) idx newInfoMap
     | (idx >= 0) && (idx < length asmtsWithInfo) =
         let (asmtAtN, oldInfoMap) = asmtsWithInfo !! idx
-            newAsmtsWithInfo      = toList $
-                Sq.update idx (asmtAtN, newInfoMap) $ Sq.fromList asmtsWithInfo
+            newAsmtsWithInfo      =
+                update idx (asmtAtN, newInfoMap) asmtsWithInfo
         in
         Result (LabelledBlock (newAsmtsWithInfo, endInfo, adj))
     | idx == length asmtsWithInfo =
