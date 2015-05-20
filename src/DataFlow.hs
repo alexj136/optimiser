@@ -76,8 +76,8 @@ lgpBlockLookup lBlockName lProg = case M.lookup lBlockName lProg of
 
 infoMapLookup :: Name -> InfoMap -> DataFlowResult DataFlowInfo
 infoMapLookup name infoMap = case M.lookup name infoMap of
-    Just info -> Result info
     Nothing   -> VarNotFound name
+    Just info -> Result info
 
 getAssignAt :: LabelledBlock -> Int -> DataFlowResult Assignment
 getAssignAt (LabelledBlock (asmtsWithInfo, _, _)) idx
@@ -126,19 +126,23 @@ getInfoForNameAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx name
 
 -- Generate data flow info for a given program.
 genDataFlowInfo :: GraphProg -> DataFlowResult LabelledGraphProg
-genDataFlowInfo prog = updateDataFlowInfo (initialLabelling prog)
+genDataFlowInfo prog = initialLabelling prog >>= updateDataFlowInfo
 
 -- Label a GraphProg with 'initial' DataFlowInfo for every assignment and
 -- variable. Initially, we assume that no assignments are every reached and so
 -- the labelling for every point and variable is NotAssigned.
-initialLabelling :: GraphProg -> LabelledGraphProg
+initialLabelling :: GraphProg -> DataFlowResult LabelledGraphProg
 initialLabelling prog =
     let allNames       = varNameList prog
         allNotAssigned = M.fromList $ map (\n -> (n, NotAssigned)) allNames
         allUnknowable  = M.fromList $ map (\n -> (n, Unknowable )) allNames
-        allBlocksNotAssigned = M.map (initialLabellingBlock allNotAssigned) prog
-    in
-    notImplemented
+        allBlocksNotAssignedProg =
+            M.map (initialLabellingBlock allNotAssigned) prog
+    in do
+        beginBlock <- lgpBlockLookup "__begin__" allBlocksNotAssignedProg
+        beginBlockInitialUnknowable <- setInfoMapAt beginBlock 0 allUnknowable
+        return $ M.insert "__begin__" beginBlockInitialUnknowable
+                                                        allBlocksNotAssignedProg
     where
     initialLabellingBlock :: InfoMap -> Block -> LabelledBlock
     initialLabellingBlock allNotAssigned (Block (asmts, adj)) =
