@@ -72,17 +72,28 @@ lgpBlockLookup lBlockName lProg = case M.lookup lBlockName lProg of
     Nothing     -> BlockNotFound lBlockName
     Just lBlock -> Result lBlock
 
+-- Throw away data flow information to obtain an unlabelled GraphProg
+discardlabels :: LabelledGraphProg -> GraphProg
+discardlabels = M.map discardlabelsBlock
+    where
+    discardlabelsBlock :: LabelledBlock -> Block
+    discardlabelsBlock (LabelledBlock (asmtsWithInfo, endInfo, adj)) =
+        Block (map fst asmtsWithInfo, adj)
+
+-- Look up an InfoMap for the DataFlowInfo corresponding to the given name
 infoMapLookup :: Name -> InfoMap -> DataFlowResult DataFlowInfo
 infoMapLookup name infoMap = case M.lookup name infoMap of
     Nothing   -> VarNotFound name
     Just info -> Result info
 
+-- Get the assignment statement at a particular index in a block
 getAssignAt :: LabelledBlock -> Int -> DataFlowResult Assignment
 getAssignAt (LabelledBlock (asmtsWithInfo, _, _)) idx
     | (idx >= 0) && (idx < length asmtsWithInfo) =
         Result (fst (asmtsWithInfo !! idx))
     | otherwise                                  = IndexOutOfRange
 
+-- Get the InfoMap at a particular index in a block
 getInfoMapAt :: LabelledBlock -> Int -> DataFlowResult InfoMap
 getInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx
     | (idx >= 0) && (idx < length asmtsWithInfo) =
@@ -90,6 +101,7 @@ getInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx
     | idx == length asmtsWithInfo                = Result endInfo
     | otherwise                                  = IndexOutOfRange
 
+-- Set the InfoMap at a particular index in a block
 setInfoMapAt :: LabelledBlock -> Int -> InfoMap -> DataFlowResult LabelledBlock
 setInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, adj)) idx newInfoMap
     | (idx >= 0) && (idx < length asmtsWithInfo) =
@@ -102,6 +114,7 @@ setInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, adj)) idx newInfoMap
         Result (LabelledBlock (asmtsWithInfo, newInfoMap, adj))
     | otherwise                   = IndexOutOfRange
 
+-- Set the DataFlowInfo for a particular name at a particular index in a block
 setInfoForNameAt :: LabelledBlock -> Int -> Name -> DataFlowInfo ->
     DataFlowResult LabelledBlock
 setInfoForNameAt block idx name info =
@@ -111,6 +124,7 @@ setInfoForNameAt block idx name info =
             let newInfoMapAt = M.insert name info prevInfoMapAt in
                 setInfoMapAt block idx newInfoMapAt
 
+-- Get the DataFlowInfo for a particular name at a particular index in a block
 getInfoForNameAt :: LabelledBlock -> Int -> Name -> DataFlowResult DataFlowInfo
 getInfoForNameAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx name
     | (idx >= 0) && (idx < length asmtsWithInfo) =
@@ -150,15 +164,45 @@ initialLabelling prog =
 -- Update inconsistent data flow information in order to obtain correct
 -- information.
 updateDataFlowInfo :: LabelledGraphProg -> DataFlowResult LabelledGraphProg
-updateDataFlowInfo lprog = doUpdateDataFlowInfo lprog "__begin__"
-    where
-    -- Update inconsistent data flow information in order to obtain correct
-    -- information, starting at the block with the given name, and proceeding
-    -- recursively to its children.
-    doUpdateDataFlowInfo ::
-        LabelledGraphProg   ->  -- The program we're updating info on
-        Name                ->  -- The name of the block we're looking at
-        DataFlowResult LabelledGraphProg
-    doUpdateDataFlowInfo lprog blockName = do
-        block <- lgpBlockLookup blockName lprog
-        notImplemented
+updateDataFlowInfo lProg = notImplemented
+
+-- Update inconsistent data flow information within a single block
+updateDataFlowInfoBlock ::
+    LabelledGraphProg ->             -- The initial program
+    Name              ->             -- The name of the block to update info in
+    Name              ->             -- The variable name we're intersted in
+    DataFlowResult LabelledGraphProg -- The resulting program
+updateDataFlowInfoBlock lProg blockName varName = notImplemented
+
+-- Given a statement (via its program, block name and index in its block), get
+-- the infoMap for the program point immediately before that statement
+predInfo :: LabelledGraphProg -> Name -> Int -> DataFlowResult [InfoMap]
+predInfo lProg blockName 0 = notImplemented
+predInfo lProg blockName n = notImplemented {-do
+    block   <- lgpBlockLookup blockName lProg
+    infoMap <- getInfoMapAt block n
+    return [infoMap]-}
+
+updateDataFlowInfoStatement ::
+    LabelledGraphProg ->             -- The initial program
+    Name              ->             -- The name of the block to update info in
+    Int               ->             -- The index of the statement in the block
+    Name              ->             -- The variable name we're intersted in
+    DataFlowResult LabelledGraphProg -- The resulting program
+updateDataFlowInfoStatement lProg blockName idx varName = notImplemented
+
+{- DATA FLOW INFORMATION PROPAGATION RULES
+info :: VarName -> Statement -> (In | Out) -> (_|_ | Const Int | ^|^)
+info x stmt In =
+    let predsInfo = map (\s -> info x s Out) (preds stmt) in
+        | any (== ^|^) predsInfo = ^|^
+        | notAllSame   predsInfo = ^|^
+        | all (== (Const C | _|_)) predsInfo = Const C        -- All Cs the same
+        | all (== _|_) predsInfo = _|_
+info x stmt Out =
+    | info x stmt In == _|_ = _|_
+info x (x := C) Out = Const C
+info x (x := y + z) Out = ^|^
+info x (y := C) Out =
+    | x =/= y = info x (y := C) In
+-}
