@@ -36,32 +36,14 @@ newtype LabelledBlock =
 -- is a map from block names to LabelledBlocks.
 type LabelledGraphProg = M.Map Name LabelledBlock
 
-data DataFlowResult a
-    = Result a
-    | BlockNotFound Name
+type DataFlowResult a = Either DataFlowError a
+
+data DataFlowError
+    = BlockNotFound Name
     | VarNotFound Name
     | IndexOutOfRange
+    | NoRuleApplies
     deriving (Show, Eq, Ord)
-
-instance Functor DataFlowResult where
-    fmap f (Result x) = Result (f x)
-    fmap _ (VarNotFound     blockName) = VarNotFound     blockName
-    fmap _ (BlockNotFound   blockName) = BlockNotFound   blockName
-    fmap _ IndexOutOfRange             = IndexOutOfRange
-
-instance Applicative DataFlowResult where
-    pure = Result
-    (<*>) (Result f) (Result x) = Result (f x)
-    (<*>) _ (VarNotFound     blockName) = VarNotFound     blockName
-    (<*>) _ (BlockNotFound   blockName) = BlockNotFound   blockName
-    (<*>) _ IndexOutOfRange             = IndexOutOfRange
-
-instance Monad DataFlowResult where
-    return = Result
-    (>>=) (Result x) f = f x
-    (>>=) (VarNotFound     blockName) _ = VarNotFound     blockName
-    (>>=) (BlockNotFound   blockName) _ = BlockNotFound   blockName
-    (>>=) IndexOutOfRange             _ = IndexOutOfRange
 
 -- Look up a (Block, M.Map Name [DataFlowInfo]) with given name in the given
 -- LabelledGraphProg.
@@ -70,8 +52,8 @@ lgpBlockLookup ::
     LabelledGraphProg   ->
     DataFlowResult LabelledBlock
 lgpBlockLookup lBlockName lProg = case M.lookup lBlockName lProg of
-    Nothing     -> BlockNotFound lBlockName
-    Just lBlock -> Result lBlock
+    Nothing     -> Left (BlockNotFound lBlockName)
+    Just lBlock -> return lBlock
 
 -- Throw away data flow information to obtain an unlabelled GraphProg
 discardlabels :: LabelledGraphProg -> GraphProg
@@ -84,23 +66,23 @@ discardlabels = M.map discardlabelsBlock
 -- Look up an InfoMap for the DataFlowInfo corresponding to the given name
 infoMapLookup :: Name -> InfoMap -> DataFlowResult DataFlowInfo
 infoMapLookup name infoMap = case M.lookup name infoMap of
-    Nothing   -> VarNotFound name
-    Just info -> Result info
+    Nothing   -> Left (VarNotFound name)
+    Just info -> return info
 
 -- Get the assignment statement at a particular index in a block
 getAssignAt :: LabelledBlock -> Int -> DataFlowResult Assignment
 getAssignAt (LabelledBlock (asmtsWithInfo, _, _)) idx
     | (idx >= 0) && (idx < length asmtsWithInfo) =
-        Result (fst (asmtsWithInfo !! idx))
-    | otherwise                                  = IndexOutOfRange
+        return (fst (asmtsWithInfo !! idx))
+    | otherwise                                  = Left IndexOutOfRange
 
 -- Get the InfoMap at a particular index in a block
 getInfoMapAt :: LabelledBlock -> Int -> DataFlowResult InfoMap
 getInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx
     | (idx >= 0) && (idx < length asmtsWithInfo) =
-        Result (snd (asmtsWithInfo !! idx))
-    | idx == length asmtsWithInfo                = Result endInfo
-    | otherwise                                  = IndexOutOfRange
+        return (snd (asmtsWithInfo !! idx))
+    | idx == length asmtsWithInfo                = return endInfo
+    | otherwise                                  = Left IndexOutOfRange
 
 getEndInfoMap :: LabelledBlock -> InfoMap
 getEndInfoMap (LabelledBlock (_, endInfo, _)) = endInfo
@@ -113,10 +95,10 @@ setInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, adj)) idx newInfoMap
             newAsmtsWithInfo      =
                 update idx (asmtAtN, newInfoMap) asmtsWithInfo
         in
-        Result (LabelledBlock (newAsmtsWithInfo, endInfo, adj))
+        return (LabelledBlock (newAsmtsWithInfo, endInfo, adj))
     | idx == length asmtsWithInfo =
-        Result (LabelledBlock (asmtsWithInfo, newInfoMap, adj))
-    | otherwise                   = IndexOutOfRange
+        return (LabelledBlock (asmtsWithInfo, newInfoMap, adj))
+    | otherwise                   = Left IndexOutOfRange
 
 -- Set the DataFlowInfo for a particular name at a particular index in a block
 setInfoForNameAt :: LabelledBlock -> Int -> Name -> DataFlowInfo ->
@@ -138,7 +120,7 @@ getInfoForNameAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx name
     | idx == length asmtsWithInfo                = do
         info <- infoMapLookup name endInfo
         return info
-    | otherwise                                  = IndexOutOfRange
+    | otherwise                                  = Left IndexOutOfRange
 
 -- Generate data flow info for a given program.
 genDataFlowInfo :: GraphProg -> DataFlowResult LabelledGraphProg
@@ -195,26 +177,46 @@ getPrevInfoMaps lProg blockName idx = do
     infoMap <- getInfoMapAt block (idx - 1)
     return [infoMap]
 
-updateDataFlowInfoStatement ::
+updateDataFlowInfoAtPoint ::
     LabelledGraphProg ->             -- The initial program
     Name              ->             -- The name of the block to update info in
     Int               ->             -- The index of the InfoMap in the block
     Name              ->             -- The variable name we're intersted in
     DataFlowResult LabelledGraphProg -- The resulting program
-updateDataFlowInfoStatement lProg blockName idx varName = do
+updateDataFlowInfoAtPoint lProg blockName idx varName = do
     block          <- lgpBlockLookup blockName lProg
     prevInfoMaps   <- getPrevInfoMaps lProg blockName idx
     prevInfo       <- mapM (infoMapLookup varName) prevInfoMaps
-    resultantInfo  <- return $
+    assignment     <- getAssignAt block idx-- ?
+    resultantInfo  <-
+        -- If the value is unknowable on any of the paths into the statement,
+        -- then the value is unknowable after the statement
         if any (== Unknowable) prevInfo then
-            Unknowable
-        else if not (allSame prevInfo) then
-            Unknowable
+            return Unknowable
+
+        -- If a value has not been assigned on every path into the statement,
+        -- then it has not been assigned after the statement
+        else if all (== NotAssigned) prevInfo then
+            return NotAssigned
+
+        -- If all paths into the statement are not unknowable, and ignoring
+        -- paths where the value is not assigned (the previous rule guarantees
+        -- that there is at least one path where it IS assigned), and those
+        -- paths have a known values, but disagree on what the value is, then
+        -- the value is unknowable after the statement
+        else if not (allSame (filter (/= NotAssigned) prevInfo)) then
+            return Unknowable
+
+        -- The converse of the previous case - no unknowables, and all known
+        -- values agree in value, then after the statement, the value is known
+        -- to have the agreed upon value
+        else if allSame (filter (/= NotAssigned) prevInfo) then
+            return $ head (filter (/= NotAssigned) prevInfo)
+
         else
-            notImplemented
+            Left NoRuleApplies
     resultantBlock <- setInfoForNameAt block idx varName resultantInfo
     return $ M.insert blockName resultantBlock lProg
-    
 
 {- DATA FLOW INFORMATION PROPAGATION RULES
 info :: VarName -> Statement -> (In | Out) -> (_|_ | Const Int | ^|^)
