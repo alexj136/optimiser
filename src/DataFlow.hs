@@ -76,6 +76,11 @@ getAssignAt (LabelledBlock (asmtsWithInfo, _, _)) idx
         return (fst (asmtsWithInfo !! idx))
     | otherwise                                  = Left IndexOutOfRange
 
+-- Get the assignment statement at a particular index in a block
+tryGetAssignAt :: LabelledBlock -> Int -> Maybe Assignment
+tryGetAssignAt (LabelledBlock (asmtsWithInfo, _, _)) idx =
+    fmap fst $ safeIndex idx asmtsWithInfo
+
 -- Get the InfoMap at a particular index in a block
 getInfoMapAt :: LabelledBlock -> Int -> DataFlowResult InfoMap
 getInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx
@@ -187,36 +192,43 @@ updateDataFlowInfoAtPoint lProg blockName idx varName = do
     block          <- lgpBlockLookup blockName lProg
     prevInfoMaps   <- getPrevInfoMaps lProg blockName idx
     prevInfo       <- mapM (infoMapLookup varName) prevInfoMaps
-    assignment     <- getAssignAt block idx-- ?
-    resultantInfo  <-
-        -- If the value is unknowable on any of the paths into the statement,
-        -- then the value is unknowable after the statement
-        if any (== Unknowable) prevInfo then
-            return Unknowable
-
-        -- If a value has not been assigned on every path into the statement,
-        -- then it has not been assigned after the statement
-        else if all (== NotAssigned) prevInfo then
-            return NotAssigned
-
-        -- If all paths into the statement are not unknowable, and ignoring
-        -- paths where the value is not assigned (the previous rule guarantees
-        -- that there is at least one path where it IS assigned), and those
-        -- paths have a known values, but disagree on what the value is, then
-        -- the value is unknowable after the statement
-        else if not (allSame (filter (/= NotAssigned) prevInfo)) then
-            return Unknowable
-
-        -- The converse of the previous case - no unknowables, and all known
-        -- values agree in value, then after the statement, the value is known
-        -- to have the agreed upon value
-        else if allSame (filter (/= NotAssigned) prevInfo) then
-            return $ head (filter (/= NotAssigned) prevInfo)
-
-        else
-            Left NoRuleApplies
+    assignment     <- return $ tryGetAssignAt block (idx - 1)
+    resultantInfo  <- applyUpdateRules prevInfo assignment
     resultantBlock <- setInfoForNameAt block idx varName resultantInfo
     return $ M.insert blockName resultantBlock lProg
+
+-- The following rules take a list of DataFlowInfo, containing the DataFlowInfo
+-- after every statement that can immediately preceed the given statement, and
+-- return the DataFlowInfo after the statement.
+applyUpdateRules ::
+    [DataFlowInfo]      ->  -- the DataFlowInfo after all preceeding statements
+    Maybe Assignment    ->  -- an Assignment that may preceed the output
+                            -- DataFlowInfo, that proceeds immediately after the
+                            -- given DataFlowInfo list holds.
+    DataFlowResult DataFlowInfo
+applyUpdateRules prevInfo maybeAssignment
+    -- If the value is unknowable on any of the paths into the statement,
+    -- then the value is unknowable after the statement
+    | any (== Unknowable) prevInfo = return Unknowable
+
+    -- If a value has not been assigned on every path into the statement,
+    -- then it has not been assigned after the statement
+    | all (== NotAssigned) prevInfo = return NotAssigned
+
+    -- If all paths into the statement are not unknowable, and ignoring
+    -- paths where the value is not assigned (the previous rule guarantees
+    -- that there is at least one path where it IS assigned), and those
+    -- paths have a known values, but disagree on what the value is, then
+    -- the value is unknowable after the statement
+    | not (allSame (filter (/= NotAssigned) prevInfo)) = return Unknowable
+
+    -- The converse of the previous case - no unknowables, and all known
+    -- values agree in value, then after the statement, the value is known
+    -- to have the agreed upon value
+    | allSame (filter (/= NotAssigned) prevInfo) =
+        return $ head (filter (/= NotAssigned) prevInfo)
+
+    | otherwise = Left NoRuleApplies
 
 {- DATA FLOW INFORMATION PROPAGATION RULES
 info :: VarName -> Statement -> (In | Out) -> (_|_ | Const Int | ^|^)
