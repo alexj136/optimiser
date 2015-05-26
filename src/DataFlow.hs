@@ -41,6 +41,7 @@ data DataFlowResult a
     | BlockNotFound Name
     | VarNotFound Name
     | IndexOutOfRange
+    deriving (Show, Eq, Ord)
 
 instance Functor DataFlowResult where
     fmap f (Result x) = Result (f x)
@@ -100,6 +101,9 @@ getInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx
         Result (snd (asmtsWithInfo !! idx))
     | idx == length asmtsWithInfo                = Result endInfo
     | otherwise                                  = IndexOutOfRange
+
+getEndInfoMap :: LabelledBlock -> InfoMap
+getEndInfoMap (LabelledBlock (_, endInfo, _)) = endInfo
 
 -- Set the InfoMap at a particular index in a block
 setInfoMapAt :: LabelledBlock -> Int -> InfoMap -> DataFlowResult LabelledBlock
@@ -174,22 +178,41 @@ updateDataFlowInfoBlock ::
     DataFlowResult LabelledGraphProg -- The resulting program
 updateDataFlowInfoBlock lProg blockName varName = notImplemented
 
--- Given a statement (via its program, block name and index in its block), get
--- the infoMap for the program point immediately before that statement
-predInfo :: LabelledGraphProg -> Name -> Int -> DataFlowResult [InfoMap]
-predInfo lProg blockName 0 = notImplemented
-predInfo lProg blockName n = notImplemented {-do
+-- Given an InfoMap reference (via its program, block name and index in its
+-- block), get the InfoMap object for the program point immediately before that
+-- statement. For InfoMaps that are not the first in the block, we just return
+-- the InfoMap at the previous index in a singleton list. For those at the
+-- beginning of the block, we return a list of InfoMaps, one for each InfoMap at
+-- the end of every block that goes to the given block.
+getPrevInfoMaps :: LabelledGraphProg -> Name -> Int -> DataFlowResult [InfoMap]
+getPrevInfoMaps lProg blockName 0   =
+    let prevBlockNames = predecessors (discardlabels lProg) blockName
+    in do
+    blocks  <- mapM (\bN -> lgpBlockLookup bN lProg) prevBlockNames
+    return (map getEndInfoMap blocks)
+getPrevInfoMaps lProg blockName idx = do
     block   <- lgpBlockLookup blockName lProg
-    infoMap <- getInfoMapAt block n
-    return [infoMap]-}
+    infoMap <- getInfoMapAt block (idx - 1)
+    return [infoMap]
 
 updateDataFlowInfoStatement ::
     LabelledGraphProg ->             -- The initial program
     Name              ->             -- The name of the block to update info in
-    Int               ->             -- The index of the statement in the block
+    Int               ->             -- The index of the InfoMap in the block
     Name              ->             -- The variable name we're intersted in
     DataFlowResult LabelledGraphProg -- The resulting program
-updateDataFlowInfoStatement lProg blockName idx varName = notImplemented
+updateDataFlowInfoStatement lProg blockName idx varName = do
+    block          <- lgpBlockLookup blockName lProg
+    prevInfoMaps   <- getPrevInfoMaps lProg blockName idx
+    prevInfo       <- mapM (infoMapLookup varName) prevInfoMaps
+    resultantInfo  <- return $
+        if any (== Unknowable) prevInfo then
+            Unknowable
+        else
+            notImplemented
+    resultantBlock <- setInfoForNameAt block idx varName resultantInfo
+    return $ M.insert blockName resultantBlock lProg
+    
 
 {- DATA FLOW INFORMATION PROPAGATION RULES
 info :: VarName -> Statement -> (In | Out) -> (_|_ | Const Int | ^|^)
