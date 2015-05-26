@@ -208,6 +208,8 @@ updateDataFlowInfoStatement lProg blockName idx varName = do
     resultantInfo  <- return $
         if any (== Unknowable) prevInfo then
             Unknowable
+        else if not (allSame prevInfo) then
+            Unknowable
         else
             notImplemented
     resultantBlock <- setInfoForNameAt block idx varName resultantInfo

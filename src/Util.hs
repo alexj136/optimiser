@@ -1,4 +1,4 @@
-module Util (notImplemented, update) where
+module Util (notImplemented, update, allSame) where
 
 import qualified Data.Sequence as Sq
 import qualified Data.Set      as St
