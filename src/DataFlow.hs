@@ -76,11 +76,6 @@ getAssignAt (LabelledBlock (asmtsWithInfo, _, _)) idx
         return (fst (asmtsWithInfo !! idx))
     | otherwise                                  = Left IndexOutOfRange
 
--- Get the assignment statement at a particular index in a block
-tryGetAssignAt :: LabelledBlock -> Int -> Maybe Assignment
-tryGetAssignAt (LabelledBlock (asmtsWithInfo, _, _)) idx =
-    fmap fst $ safeIndex idx asmtsWithInfo
-
 -- Get the InfoMap at a particular index in a block
 getInfoMapAt :: LabelledBlock -> Int -> DataFlowResult InfoMap
 getInfoMapAt (LabelledBlock (asmtsWithInfo, endInfo, _)) idx
@@ -161,7 +156,7 @@ updateDataFlowInfo lProg = notImplemented
 updateDataFlowInfoBlock ::
     LabelledGraphProg ->             -- The initial program
     Name              ->             -- The name of the block to update info in
-    Name              ->             -- The variable name we're intersted in
+    Name              ->             -- The variable name we're interested in
     DataFlowResult LabelledGraphProg -- The resulting program
 updateDataFlowInfoBlock lProg blockName varName = notImplemented
 
@@ -186,53 +181,95 @@ updateDataFlowInfoAtPoint ::
     LabelledGraphProg ->             -- The initial program
     Name              ->             -- The name of the block to update info in
     Int               ->             -- The index of the InfoMap in the block
-    Name              ->             -- The variable name we're intersted in
+    Name              ->             -- The variable name we're interested in
     DataFlowResult LabelledGraphProg -- The resulting program
 updateDataFlowInfoAtPoint lProg blockName idx varName = do
-    block          <- lgpBlockLookup blockName lProg
-    prevInfoMaps   <- getPrevInfoMaps lProg blockName idx
-    prevInfo       <- mapM (infoMapLookup varName) prevInfoMaps
-    assignment     <- return $ tryGetAssignAt block (idx - 1)
-    resultantInfo  <- applyUpdateRules prevInfo assignment
-    resultantBlock <- setInfoForNameAt block idx varName resultantInfo
-    return $ M.insert blockName resultantBlock lProg
+    block <- lgpBlockLookup blockName lProg
+    -- If we're looking at the first InfoMap in the block, there is no preceding
+    -- assignment, so we're concerned with the end InfoMaps for the preceding
+    -- blocks. If we're looking at a later assignment, we only need look at the
+    -- previous InfoMap (there will be exactly one) and the assignment that
+    -- comes after it. The following two branches handle each of those cases by
+    -- retrieving the appropriate information and applying the appropriate
+    -- rules.
+    if idx == 0 then do
+        prevInfoMaps   <- getPrevInfoMaps lProg blockName idx
+        prevInfo       <- mapM (infoMapLookup varName) prevInfoMaps
+        resultantInfo  <- return $ applyUpdateRulesBlockEntry prevInfo
+        resultantBlock <- setInfoForNameAt block idx varName resultantInfo
+        return $ M.insert blockName resultantBlock lProg
+    else do
+        assignment     <- getAssignAt block (idx - 1)
+        prevInfo       <- getInfoForNameAt block (idx - 1) varName
+        resultantInfo  <- return $ applyUpdateRulesInsideBlock varName
+                                                            assignment prevInfo
+        resultantBlock <- setInfoForNameAt block idx varName resultantInfo
+        return $ M.insert blockName resultantBlock lProg
 
 -- The following rules take a list of DataFlowInfo, containing the DataFlowInfo
--- after every statement that can immediately preceed the given statement, and
--- return the DataFlowInfo after the statement.
-applyUpdateRules ::
-    [DataFlowInfo]      ->  -- the DataFlowInfo after all preceeding statements
-    Maybe Assignment    ->  -- an Assignment that may preceed the output
-                            -- DataFlowInfo, that proceeds immediately after the
-                            -- given DataFlowInfo list holds.
-    DataFlowResult DataFlowInfo
-applyUpdateRules prevInfo maybeAssignment
+-- after every block that can precede the block in question, for a single
+-- variable, and computes the DataFlowInfo before the first assignment in the
+-- block, for that variable.
+applyUpdateRulesBlockEntry :: [DataFlowInfo] -> DataFlowInfo
+applyUpdateRulesBlockEntry prevInfo
     -- If the value is unknowable on any of the paths into the statement,
     -- then the value is unknowable after the statement
-    | any (== Unknowable) prevInfo = return Unknowable
+    | any (== Unknowable) prevInfo = Unknowable
 
     -- If a value has not been assigned on every path into the statement,
     -- then it has not been assigned after the statement
-    | all (== NotAssigned) prevInfo = return NotAssigned
+    | all (== NotAssigned) prevInfo = NotAssigned
 
     -- If all paths into the statement are not unknowable, and ignoring
     -- paths where the value is not assigned (the previous rule guarantees
     -- that there is at least one path where it IS assigned), and those
     -- paths have a known values, but disagree on what the value is, then
     -- the value is unknowable after the statement
-    | not (allSame (filter (/= NotAssigned) prevInfo)) = return Unknowable
+    | not (allSame (filter (/= NotAssigned) prevInfo)) = Unknowable
 
     -- The converse of the previous case - no unknowables, and all known
     -- values agree in value, then after the statement, the value is known
     -- to have the agreed upon value
     | allSame (filter (/= NotAssigned) prevInfo) =
-        return $ head (filter (/= NotAssigned) prevInfo)
+        head (filter (/= NotAssigned) prevInfo)
 
-    | otherwise = Left NoRuleApplies
+-- The following rules take a variable name, an assignment and some DataFlowInfo
+-- which is the status of the given variable name just before the given
+-- assignment, and map this information to the status of the variable after the
+-- assignment.
+applyUpdateRulesInsideBlock :: Name -> Assignment -> DataFlowInfo ->
+    DataFlowInfo
+applyUpdateRulesInsideBlock varName assignment prevInfo
+    -- If the statement is never reached, we can say for certain that the
+    -- following statement will not be reached, regardless of the nature of the
+    -- assignment statement. All patterns after this one can assume that the
+    -- statement is executed.
+    | prevInfo == NotAssigned = NotAssigned
+    | otherwise           = case assignment of
+        -- If the assignment from a constant, and the assignee is the variable
+        -- in question, then after the statement, we know that the variable in
+        -- question has the assigned value. This also applies for two constants
+        -- combined with an operation.
+        FromOne assignee (Lit x)            | assignee == varName -> Known x
+        FromTwo assignee (Lit x) op (Lit y) | assignee == varName ->
+            Known ((opToFunc op) x y)
+
+        -- If there are any variables involved in the assignment, we naively say
+        -- we can't know the value of the variable. We can do better than this
+        -- with a more sophisticated implementation, however.
+        FromOne assignee (Var _)           | assignee == varName -> Unknowable
+        FromTwo assignee (Var _) _ (Lit _) | assignee == varName -> Unknowable
+        FromTwo assignee (Lit _) _ (Var _) | assignee == varName -> Unknowable
+        FromTwo assignee (Var _) _ (Var _) | assignee == varName -> Unknowable
+
+        -- If the assignment isn't to the variable of interest, then we just
+        -- return the input info, since the variable of interest won't change.
+        FromOne assignee _     | assignee /= varName -> prevInfo
+        FromTwo assignee _ _ _ | assignee /= varName -> prevInfo
 
 {- DATA FLOW INFORMATION PROPAGATION RULES
 info :: VarName -> Statement -> (In | Out) -> (_|_ | Const Int | ^|^)
-info x stmt In =
+iinfoinfoinfoinfoinfoinfonfo x stmt In =
     let predsInfo = map (\s -> info x s Out) (preds stmt) in
         | any (== ^|^) predsInfo = ^|^
         | notAllSame   predsInfo = ^|^
