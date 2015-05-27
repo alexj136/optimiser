@@ -2,6 +2,7 @@ module DataFlow where
 
 import Control.Monad (foldM)
 import qualified Data.Map as M
+import Data.List (intersperse)
 import Util
 import Syntax
 
@@ -56,9 +57,22 @@ data DataFlowError
 instance Show DataFlowInfo where
     show NotAssigned = "_|_"
     show (Known x)   = show x
-    show Unknowable  = "^|^"
+    show Unknowable  = "T"
+
+ppInfoMap :: InfoMap -> String
+ppInfoMap infoMap = concat ["        ",
+    ((concat . (intersperse ", ") . (map ppLabelling) . M.toList) infoMap),
+    "\n"]
+
+ppLabelling :: (Name, DataFlowInfo) -> String
+ppLabelling (n, i) = concat [n, " = ", show i]
 
 instance Show LabelledBlock where
+    show (LabelledBlock ((infoMap, asmt) : rest, endInfo, adj)) =
+        concat [show infoMap, show asmt, "\n",
+            show (LabelledBlock (rest, endInfo, adj))]
+    show (LabelledBlock ([]             , endInfo, adj)) =
+        show endInfo ++ show adj ++ "\n"
 
 {-------------------------------------------------------------------------------
                     GETTERS/SETTERS FOR LABELLED PROGRAMS
