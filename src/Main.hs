@@ -18,10 +18,10 @@ main = do
             linearAST = parse tokens
             graphAST  = linearToGraph linearAST
             resultStr = case I.interpret graphAST M.empty of
-                I.Result map                     -> show map
-                I.EvaluationOfUndefinedName name ->
+                Right map                               -> show map
+                Left (I.EvaluationOfUndefinedName name) ->
                     "Variable name '" ++ name ++ "' undefined"
-                I.JumpToUndefinedLabel      name ->
+                Left (I.JumpToUndefinedLabel      name) ->
                     "Label '" ++ name ++ "' undefined"
             in
             putStrLn resultStr

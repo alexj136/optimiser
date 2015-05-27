@@ -144,5 +144,9 @@ instance Show LinearStatement where
     show (Goto name)    = "goto " ++ name
     show (Assign asmt)  = show asmt
 
+instance Show Adjacency where
+    show (AdjGoto name)          = show (Goto name)
+    show (AdjIf val name1 name2) = show (If val name1 name2)
+
 ppLinearProg :: LinearProg -> String
 ppLinearProg = concat . intersperse "\n" . map show

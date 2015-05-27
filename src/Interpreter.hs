@@ -6,34 +6,16 @@
 module Interpreter where
 
 import Syntax
-import Control.Monad
+import Control.Monad (foldM)
 import qualified Data.Map as M
 
--- There are three possible outcomes for the interpreter:
-data InterpretResult a
-    -- A successful execution, yeilding a store
-    = Result a
+type InterpretResult a = Either InterpretError a
+
+data InterpretError
     -- An error due to an undefined variable
-    | EvaluationOfUndefinedName Name
+    = EvaluationOfUndefinedName Name
     -- An error due to an undefined label
     | JumpToUndefinedLabel Name
-
-instance Functor InterpretResult where
-    fmap f (Result x) = Result (f x)
-    fmap f (EvaluationOfUndefinedName name) = EvaluationOfUndefinedName name
-    fmap f (JumpToUndefinedLabel      name) = JumpToUndefinedLabel      name
-
-instance Applicative InterpretResult where
-    pure = Result
-    (<*>) (Result f) (Result x) = Result (f x)
-    (<*>) _ (EvaluationOfUndefinedName name) = EvaluationOfUndefinedName name
-    (<*>) _ (JumpToUndefinedLabel      name) = JumpToUndefinedLabel      name
-
-instance Monad InterpretResult where
-    return = Result
-    (>>=) (Result x) f = f x
-    (>>=) (EvaluationOfUndefinedName name) _ = EvaluationOfUndefinedName name
-    (>>=) (JumpToUndefinedLabel      name) _ = JumpToUndefinedLabel      name
 
 -- Maps with Name keys play an important role in the interpreter. We often have
 -- to lookup a named thing in map and then use the thing. However, if the map
@@ -42,13 +24,13 @@ instance Monad InterpretResult where
 -- function to use if the thing is not present, looks up the name in the map,
 -- using the given error function if the thing isn't present.
 iLookup ::
-    (Name -> InterpretResult a) ->  -- The error function
+    (Name -> InterpretError)    ->  -- The error function
     Name                        ->  -- The name to query with
     M.Map Name a                ->  -- The map to query
     InterpretResult a               -- The value we look up
 iLookup errFn name map = case M.lookup name map of
-    Nothing -> errFn name
-    Just a  -> Result a
+    Nothing -> Left (errFn name)
+    Just a  -> return a
 
 interpret ::
     GraphProg       ->                  -- The program we're executing
@@ -56,7 +38,7 @@ interpret ::
     InterpretResult (M.Map Name Int)    -- The final store
 interpret prog initialStore = interpret' prog "__begin__" initialStore
     where
-    interpret' prog "__end__" store = Result store
+    interpret' prog "__end__" store = return store
     interpret' prog curBlockName store = do
         (nextLabel, newStore) <- doBlock prog curBlockName store
         interpret' prog nextLabel newStore
@@ -83,7 +65,7 @@ followAdjacency ::
     M.Map Name Int  ->      -- The current variable store
     InterpretResult Name    -- The label of the next block to execute
 followAdjacency prog adj store = case adj of
-    AdjGoto lbl         -> Result lbl
+    AdjGoto lbl         -> return lbl
     AdjIf val lbl1 lbl2 -> do
         ev <- evalVal val store
         return (if ev > 0 then lbl1 else lbl2)
@@ -114,5 +96,5 @@ evalVal ::
     Val ->              -- The value to evaluate
     M.Map Name Int ->   -- The current store
     InterpretResult Int -- The 'evaluated' value
-evalVal (Lit int)  store = Result int
+evalVal (Lit int)  store = return int
 evalVal (Var name) store = (iLookup EvaluationOfUndefinedName) name store
