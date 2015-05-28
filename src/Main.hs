@@ -22,7 +22,7 @@ main = do
             putStrLn $ concat [
                 I.ppInterpretResult (I.interpret graphAST M.empty),
                 "\n\n",
-                Df.ppDataFlowResult (Df.initialLabelling graphAST)]
+                Df.ppDataFlowResult (Df.genDataFlowInfo graphAST)]
         }
     else
         putStrLn "Illegal argument(s)"

@@ -104,13 +104,16 @@ lgpBlockLookup lBlockName lProg = case M.lookup lBlockName lProg of
     Nothing     -> Left (BlockNotFound lBlockName)
     Just lBlock -> return lBlock
 
--- Throw away data flow information to obtain an unlabelled GraphProg
+-- Throw away data flow information in a LabelledGraphProg to obtain an
+-- unlabelled GraphProg
 discardlabels :: LabelledGraphProg -> GraphProg
 discardlabels = M.map discardlabelsBlock
-    where
-    discardlabelsBlock :: LabelledBlock -> Block
-    discardlabelsBlock (LabelledBlock (asmtsWithInfo, endInfo, adj)) =
-        Block (map snd asmtsWithInfo, adj)
+
+-- Throw away data flow information in a LabelledBlock to obtain an unlabelled
+-- Block
+discardlabelsBlock :: LabelledBlock -> Block
+discardlabelsBlock (LabelledBlock (asmtsWithInfo, endInfo, adj)) =
+    Block (map snd asmtsWithInfo, adj)
 
 -- Look up an InfoMap for the DataFlowInfo corresponding to the given name
 infoMapLookup :: Name -> InfoMap -> DataFlowResult DataFlowInfo
@@ -212,7 +215,19 @@ initialLabelling prog =
 -- Update inconsistent data flow information in order to obtain correct
 -- information.
 updateDataFlowInfo :: LabelledGraphProg -> DataFlowResult LabelledGraphProg
-updateDataFlowInfo lProg = notImplemented
+updateDataFlowInfo lProg = do
+    oneUpdate <- updateDataFlowInfoFromBlock lProg "__begin__"
+    if lProg == oneUpdate then return lProg else updateDataFlowInfo oneUpdate
+
+updateDataFlowInfoFromBlock :: LabelledGraphProg -> Name ->
+    DataFlowResult LabelledGraphProg
+updateDataFlowInfoFromBlock lProg blockName
+    | blockName == "__end__" = return lProg
+    | blockName /= "__end__" = do
+        block                 <- lgpBlockLookup blockName lProg
+        nextBlocks            <- return $ successors $ discardlabelsBlock block
+        lProgWithBlockUpdated <- updateDataFlowInfoBlock lProg blockName
+        foldM updateDataFlowInfoFromBlock lProgWithBlockUpdated nextBlocks
 
 -- Update inconsistent data flow information within a single block, for all
 -- names.
