@@ -8,6 +8,7 @@ import Parser
 import Syntax
 import qualified Interpreter as I
 import qualified DataFlow    as Df
+import qualified ConstProp   as Cp
 
 main :: IO ()
 main = do

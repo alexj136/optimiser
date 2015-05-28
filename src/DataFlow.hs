@@ -39,6 +39,18 @@ newtype LabelledBlock =
 -- is a map from block names to LabelledBlocks.
 type LabelledGraphProg = M.Map Name LabelledBlock
 
+-- Determine if a DataFlowInfo is a Known Int.
+isKnown :: DataFlowInfo -> Bool
+isKnown (Known _) = True
+isKnown _         = False
+
+-- Retreive the Known Int from a DataFlowInfo. Raises an error if the Info is
+-- not Known, so always check with isKnown first.
+getKnownVal :: DataFlowInfo -> Int
+getKnownVal (Known x) = x
+getKnownVal _         = error "Tried to get value from unknown DataFlowInfo"
+
+
 {-------------------------------------------------------------------------------
                      LABELLING OPERATION ERROR MONAD
 -------------------------------------------------------------------------------}
