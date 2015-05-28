@@ -48,11 +48,17 @@ data DataFlowError
     | VarNotFound Name
     | IndexOutOfRange
     | NoRuleApplies
-    deriving (Show, Eq, Ord)
+    deriving (Eq, Ord)
 
 {-------------------------------------------------------------------------------
                                 PRETTY PRINTING
 -------------------------------------------------------------------------------}
+
+instance Show DataFlowError where
+    show (BlockNotFound name) = "Block '" ++ name ++ "' not found."
+    show (VarNotFound   name) = "Variable '" ++ name ++ "' not found."
+    show IndexOutOfRange      = "List index out of range."
+    show NoRuleApplies        = "No update rule applicable."
 
 instance Show DataFlowInfo where
     show NotAssigned = "_|_"
@@ -61,18 +67,28 @@ instance Show DataFlowInfo where
 
 ppInfoMap :: InfoMap -> String
 ppInfoMap infoMap = concat ["        ",
-    ((concat . (intersperse ", ") . (map ppLabelling) . M.toList) infoMap),
-    "\n"]
+    ((concat . intersperse ", " . map ppLabelling . M.toList) infoMap), "\n"]
 
 ppLabelling :: (Name, DataFlowInfo) -> String
 ppLabelling (n, i) = concat [n, " = ", show i]
 
 instance Show LabelledBlock where
     show (LabelledBlock ((infoMap, asmt) : rest, endInfo, adj)) =
-        concat [show infoMap, show asmt, "\n",
+        concat [ppInfoMap infoMap, show asmt, "\n",
             show (LabelledBlock (rest, endInfo, adj))]
     show (LabelledBlock ([]             , endInfo, adj)) =
-        show endInfo ++ show adj ++ "\n"
+        ppInfoMap endInfo ++ show adj ++ "\n"
+
+ppNameAndBlock :: (Name, LabelledBlock) -> String
+ppNameAndBlock (n, blk) = n ++ ":\n" ++ show blk
+
+ppLabelledGraphProg :: LabelledGraphProg -> String
+ppLabelledGraphProg = concat . intersperse "\n" . map ppNameAndBlock . M.toList
+
+ppDataFlowResult :: DataFlowResult LabelledGraphProg -> String
+ppDataFlowResult res = case res of
+    Left  err   -> show err
+    Right lProg -> ppLabelledGraphProg lProg
 
 {-------------------------------------------------------------------------------
                     GETTERS/SETTERS FOR LABELLED PROGRAMS
@@ -316,7 +332,7 @@ applyUpdateRulesInsideBlock varName assignment prevInfo
 
 {- DATA FLOW INFORMATION PROPAGATION RULES
 info :: VarName -> Statement -> (In | Out) -> (_|_ | Const Int | ^|^)
-iinfoinfoinfoinfoinfoinfonfo x stmt In =
+info x stmt In =
     let predsInfo = map (\s -> info x s Out) (preds stmt) in
         | any (== ^|^) predsInfo = ^|^
         | notAllSame   predsInfo = ^|^

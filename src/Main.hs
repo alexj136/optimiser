@@ -12,18 +12,17 @@ import qualified DataFlow    as Df
 main :: IO ()
 main = do
     args <- getArgs
-    if length args == 1 then do
-        fileText <- readFile (args !! 0)
-        let tokens = scan fileText
-            linearAST = parse tokens
-            graphAST  = linearToGraph linearAST
-            resultStr = case I.interpret graphAST M.empty of
-                Right map                               -> show map
-                Left (I.EvaluationOfUndefinedName name) ->
-                    "Variable name '" ++ name ++ "' undefined"
-                Left (I.JumpToUndefinedLabel      name) ->
-                    "Label '" ++ name ++ "' undefined"
+    if length args == 1 then
+        do {
+            fileText <- readFile (args !! 0);
+            let tokens = scan fileText
+                linearAST = parse tokens
+                graphAST  = linearToGraph linearAST
             in
-            putStrLn resultStr
+            putStrLn $ concat [
+                I.ppInterpretResult (I.interpret graphAST M.empty),
+                "\n\n",
+                Df.ppDataFlowResult (Df.initialLabelling graphAST)]
+        }
     else
         putStrLn "Illegal argument(s)"

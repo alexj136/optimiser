@@ -8,6 +8,11 @@ module Interpreter where
 import Syntax
 import Control.Monad (foldM)
 import qualified Data.Map as M
+import Data.List (intersperse)
+
+{-------------------------------------------------------------------------------
+                            INTERPRETER ERROR MONAD
+-------------------------------------------------------------------------------}
 
 type InterpretResult a = Either InterpretError a
 
@@ -16,6 +21,30 @@ data InterpretError
     = EvaluationOfUndefinedName Name
     -- An error due to an undefined label
     | JumpToUndefinedLabel Name
+
+{-------------------------------------------------------------------------------
+                                PRETTY PRINTING
+-------------------------------------------------------------------------------}
+
+instance Show InterpretError where
+    show (JumpToUndefinedLabel      name) = "Label '" ++ name ++ "' undefined"
+    show (EvaluationOfUndefinedName name) =
+        "Variable name '" ++ name ++ "' undefined"
+
+ppInterpretResult :: InterpretResult (M.Map Name Int) -> String
+ppInterpretResult res = case res of
+    Left  err -> show err
+    Right map -> ppVarMap map
+
+ppVarMap :: M.Map Name Int -> String
+ppVarMap = concat . intersperse ", " . map ppVarValuePair . M.toList
+
+ppVarValuePair :: (Name, Int) -> String
+ppVarValuePair (n, i) = n ++ " = " ++ show i
+
+{-------------------------------------------------------------------------------
+                            INTERPRETER FUNCTIONS
+-------------------------------------------------------------------------------}
 
 -- Maps with Name keys play an important role in the interpreter. We often have
 -- to lookup a named thing in map and then use the thing. However, if the map

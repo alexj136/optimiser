@@ -133,9 +133,9 @@ instance Show Val where
     show val = case val of { Var name -> name ; Lit int -> show int }
 
 instance Show Assignment where
-    show (FromOne name val)      = name ++ ' ' : show val
-    show (FromTwo name v1 op v2) =
-        concat $ intersperse " " $ [name, ":=", show v1, show op, show v2]
+    show assignment = concat $ intersperse " " $ case assignment of
+        FromOne name val      -> [name, ":=", show val]
+        FromTwo name v1 op v2 -> [name, ":=", show v1, show op, show v2]
 
 instance Show LinearStatement where
     show (Label name)   = name ++ ":"
