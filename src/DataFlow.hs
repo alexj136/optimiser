@@ -1,7 +1,9 @@
 module DataFlow where
+import Debug.Trace (trace)
 
 import Control.Monad (foldM)
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.List (intersperse)
 import Util
 import Syntax
@@ -47,7 +49,6 @@ data DataFlowError
     = BlockNotFound Name
     | VarNotFound Name
     | IndexOutOfRange
-    | NoRuleApplies
     deriving (Eq, Ord)
 
 {-------------------------------------------------------------------------------
@@ -55,10 +56,10 @@ data DataFlowError
 -------------------------------------------------------------------------------}
 
 instance Show DataFlowError where
-    show (BlockNotFound name) = "Block '" ++ name ++ "' not found."
-    show (VarNotFound   name) = "Variable '" ++ name ++ "' not found."
-    show IndexOutOfRange      = "List index out of range."
-    show NoRuleApplies        = "No update rule applicable."
+    show err = concat $ case err of
+        BlockNotFound   name -> ["Block '", name, "' not found."]
+        VarNotFound     name -> ["Variable '", name, "' not found."]
+        IndexOutOfRange      -> ["Index out of range."]
 
 instance Show DataFlowInfo where
     show NotAssigned = "_|_"
@@ -216,18 +217,32 @@ initialLabelling prog =
 -- information.
 updateDataFlowInfo :: LabelledGraphProg -> DataFlowResult LabelledGraphProg
 updateDataFlowInfo lProg = do
-    oneUpdate <- updateDataFlowInfoFromBlock lProg "__begin__"
+    -- Get the implementation's __begin__ block which then jumps to the user's
+    -- first block
+    implbeginBlock <- lgpBlockLookup "__begin__" lProg
+
+    -- Get the user's first block and begin optimisation from there
+    userBeginBlock <- return $ head $ successors $ discardlabelsBlock
+                                                                implbeginBlock
+    oneUpdate      <- updateDataFlowInfoFromBlock S.empty lProg userBeginBlock
     if lProg == oneUpdate then return lProg else updateDataFlowInfo oneUpdate
 
-updateDataFlowInfoFromBlock :: LabelledGraphProg -> Name ->
-    DataFlowResult LabelledGraphProg
-updateDataFlowInfoFromBlock lProg blockName
-    | blockName == "__end__" = return lProg
-    | blockName /= "__end__" = do
+-- Walk through the program block by block (depth-first search) and update any
+-- inconsistent data flow information.
+updateDataFlowInfoFromBlock ::
+    S.Set Name          ->              -- Blocks that are already explored.
+                                        -- Required to guarantee termination.
+    LabelledGraphProg   ->              -- The program
+    Name                ->              -- The current block to explore
+    DataFlowResult LabelledGraphProg    -- The resultant program
+updateDataFlowInfoFromBlock explored lProg blockName
+    | blockName == "__end__" || S.member blockName explored = return lProg
+    | otherwise = do
         block                 <- lgpBlockLookup blockName lProg
         nextBlocks            <- return $ successors $ discardlabelsBlock block
         lProgWithBlockUpdated <- updateDataFlowInfoBlock lProg blockName
-        foldM updateDataFlowInfoFromBlock lProgWithBlockUpdated nextBlocks
+        foldM (updateDataFlowInfoFromBlock (S.insert blockName explored))
+                                                lProgWithBlockUpdated nextBlocks
 
 -- Update inconsistent data flow information within a single block, for all
 -- names.
