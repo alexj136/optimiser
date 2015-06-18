@@ -18,10 +18,13 @@ main = do
     args        <- getArgs
     parseResult <- return $ argParse args
     resultStr   <- case parseResult of
-        Right actionAndFileName         -> doAction actionAndFileName
+        Right (action, fileName)        -> do
+            fileText <- readFile fileName
+            return $ doAction (action, fileText)
         Left InvalidCmdSyntax           -> return helpString
         Left (FileNotOpenable fileName) ->
             return $ "File '" ++ fileName ++ "' could not be opened."
+    putStrLn resultStr
     return $ case parseResult of
         Left  _ -> ExitFailure 1
         Right _ -> ExitSuccess
@@ -40,17 +43,19 @@ data CmdError
 
 type CmdLineResult = Either CmdError (Action, String)
 
-getProg :: IO String -> IO GraphProg
-getProg iOFileName = do
-    fileName <- iOFileName
-    fileText <- readFile fileName
-    return $ linearToGraph $ parse $ scan fileText
+-- Generate a GraphProg from the program's text
+getProg :: String -> GraphProg
+getProg = linearToGraph . parse . scan
 
-doAction :: (Action, String) -> IO String
-doAction (action, fileText) = case action of
-    RunOptimised   -> notImplemented
-    RunUnoptimised -> notImplemented
-    ShowOptimise   -> notImplemented
+doAction :: (Action, String) -> String
+doAction (action, fileText) = let prog = getProg fileText in case action of
+    RunOptimised   -> Df.ppDataFlowResult I.ppInterpretResult $ do
+        labelledProg <- Df.genDataFlowInfo prog
+        return $ I.interpret (Cp.constProp labelledProg) M.empty
+    RunUnoptimised -> I.ppInterpretResult $ I.interpret prog M.empty
+    ShowOptimise   -> Df.ppDataFlowResult ppLinearProg $ do
+        labelledProg <- Df.genDataFlowInfo prog
+        return $ graphToLinear $ Cp.constProp labelledProg
 
 argParse :: [String] -> CmdLineResult
 argParse args = case args of

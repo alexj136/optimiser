@@ -98,10 +98,10 @@ ppNameAndBlock (n, blk) = n ++ ":\n" ++ show blk
 ppLabelledGraphProg :: LabelledGraphProg -> String
 ppLabelledGraphProg = concat . intersperse "\n" . map ppNameAndBlock . M.toList
 
-ppDataFlowResult :: DataFlowResult LabelledGraphProg -> String
-ppDataFlowResult res = case res of
+ppDataFlowResult :: (a -> String) -> DataFlowResult a -> String
+ppDataFlowResult showFn res = case res of
     Left  err   -> show err
-    Right lProg -> ppLabelledGraphProg lProg
+    Right thing -> showFn thing
 
 {-------------------------------------------------------------------------------
                     GETTERS/SETTERS FOR LABELLED PROGRAMS

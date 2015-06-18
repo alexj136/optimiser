@@ -17,10 +17,16 @@ constPropAssignment (infoMap, assignment) = (infoMap, newAssignment)
         FromTwo assignee (Lit _) _ (Lit _) -> assignment
         FromOne assignee (Var x)            | isKnown (infoMap M.! x) ->
             FromOne assignee (Lit (getKnownVal (infoMap M.! x)))
+        FromOne assignee (Var x)            | otherwise               ->
+            assignment
         FromTwo assignee (Lit i) op (Var x) | isKnown (infoMap M.! x) ->
             FromTwo assignee (Lit i) op (Lit (getKnownVal (infoMap M.! x)))
+        FromTwo assignee (Lit i) op (Var x) | otherwise               ->
+            assignment
         FromTwo assignee (Var x) op (Lit i) | isKnown (infoMap M.! x) ->
             FromTwo assignee (Lit (getKnownVal (infoMap M.! x))) op (Lit i)
+        FromTwo assignee (Var x) op (Lit i) | otherwise               ->
+            assignment
         FromTwo assignee (Var x) op (Var y)
             | isKnown (infoMap M.! x) && isKnown (infoMap M.! y) ->
                 FromTwo assignee (Lit (getKnownVal (infoMap M.! x))) op

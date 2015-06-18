@@ -1,5 +1,6 @@
 module Syntax where
 
+import Util (notImplemented)
 import Data.List (intersperse)
 import qualified Data.Map as M
 
@@ -121,6 +122,25 @@ parseBlock (stmt : rest) curBlock = case stmt of
     If val tName fName  -> (Block (curBlock, AdjIf val tName fName), rest)
     Goto name           -> (Block (curBlock, AdjGoto name), rest)
     Assign asmt         -> parseBlock rest (curBlock ++ [asmt])
+
+graphToLinear :: GraphProg -> LinearProg
+graphToLinear graphProg = let
+    beginBlock     = graphProg M.! "__begin__"
+    endBlock       = graphProg M.! "__end__"
+    progNoBeginEnd = M.delete "__begin__" $ M.delete "__end__" graphProg
+    in
+    concat $ map blockAndNameToLinear $ concat $
+        [ [ ("__begin__", beginBlock) ]
+        , M.toList progNoBeginEnd
+        , [ ("__end__"  , endBlock  ) ]
+        ]
+
+blockAndNameToLinear :: (Name, Block) -> [LinearStatement]
+blockAndNameToLinear (label, Block (asmts, adj)) = concat $
+    [ [ Label label ]
+    , map Assign asmts
+    , [ case adj of { AdjGoto n -> Goto n ; AdjIf v n1 n2 -> If v n1 n2 } ]
+    ]
 
 {-------------------------------------------------------------------------------
                                 PRETTY PRINTING
